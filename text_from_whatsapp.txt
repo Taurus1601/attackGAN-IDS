@@ -1,0 +1,220 @@
+// rt_tgsigqueueinfo
+void template_rt_tgsigqueueinfo() {
+    siginfo_t info = {0};
+    info.si_signo = SIGINT;
+    rt_tgsigqueueinfo(getpid(), getpid(), SIGINT, &info);
+}
+
+// perf_event_open
+void template_perf_event_open() {
+    struct perf_event_attr pe = {0};
+    pe.size = sizeof(struct perf_event_attr);
+    int fd = perf_event_open(&pe, getpid(), -1, -1, 0);
+    if (fd != -1) {
+        close(fd);
+    }
+}
+
+// recvmmsg
+void template_recvmmsg() {
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_ANY);
+    bind(sockfd, (struct sockaddr *)&addr, sizeof(addr));
+
+    struct mmsghdr msgs[1];
+    struct iovec iov[1];
+    char buffer[1024];
+    iov[0].iov_base = buffer;
+    iov[0].iov_len = sizeof(buffer);
+    msgs[0].msg_hdr.msg_iov = iov;
+    msgs[0].msg_hdr.msg_iovlen = 1;
+
+    recvmmsg(sockfd, msgs, 1, 0, NULL);
+    close(sockfd);
+}
+
+// fanotify_init
+void template_fanotify_init() {
+    int fd = fanotify_init(FAN_CLOEXEC | FAN_CLASS_NOTIF, O_RDONLY);
+    if (fd != -1) {
+        close(fd);
+    }
+}
+
+// fanotify_mark
+void template_fanotify_mark() {
+    int fd = fanotify_init(FAN_CLOEXEC | FAN_CLASS_NOTIF, O_RDONLY);
+    if (fd != -1) {
+        fanotify_mark(fd, FAN_MARK_ADD, FAN_CREATE | FAN_DELETE, AT_FDCWD, "/tmp");
+        close(fd);
+    }
+}
+
+// prlimit64
+void template_prlimit64() {
+    struct rlimit64 rl = {1024, 2048};
+    prlimit64(getpid(), RLIMIT_NOFILE, &rl, NULL);
+}
+
+// name_to_handle_at
+void template_name_to_handle_at() {
+    struct file_handle handle;
+    int mount_id;
+    name_to_handle_at(AT_FDCWD, "/tmp/testfile.txt", &handle, &mount_id, 0);
+}
+
+// open_by_handle_at
+void template_open_by_handle_at() {
+    struct file_handle handle;
+    int mount_id;
+    int fd = open("/tmp/testfile.txt", O_RDONLY);
+    if (fd != -1) {
+        name_to_handle_at(AT_FDCWD, "/tmp/testfile.txt", &handle, &mount_id, 0);
+        open_by_handle_at(fd, &handle, O_RDONLY);
+        close(fd);
+    }
+}
+
+// clock_adjtime
+void template_clock_adjtime() {
+    struct timex t = {0};
+    clock_adjtime(CLOCK_REALTIME, &t);
+}
+
+// syncfs
+void template_syncfs() {
+    int fd = open("/", O_RDONLY);
+    if (fd != -1) {
+        syncfs(fd);
+        close(fd);
+    }
+}
+
+// sendmmsg
+void template_sendmmsg() {
+    int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    struct sockaddr_in addr = {0};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+
+    struct mmsghdr msgs[1];
+    struct iovec iov[1];
+    char buffer[] = "Hello";
+    iov[0].iov_base = buffer;
+    iov[0].iov_len = sizeof(buffer) - 1;
+    msgs[0].msg_hdr.msg_iov = iov;
+    msgs[0].msg_hdr.msg_iovlen = 1;
+
+    sendmmsg(sockfd, msgs, 1, 0);
+    close(sockfd);
+}
+
+// setns
+void template_setns() {
+    int fd = open("/proc/self/ns/mnt", O_RDONLY);
+    if (fd != -1) {
+        setns(fd, CLONE_NEWNS);
+        close(fd);
+    }
+}
+
+// getcpu
+void template_getcpu() {
+    unsigned cpu, node;
+    getcpu(&cpu, &node, NULL);
+}
+
+// process_vm_readv
+void template_process_vm_readv() {
+    int pid = fork();
+    if (pid == 0) {
+        // Child process
+        while (1);
+    } else {
+        // Parent process
+        struct iovec local[1];
+        struct iovec remote[1];
+        char buffer[1024];
+        local[0].iov_base = buffer;
+        local[0].iov_len = sizeof(buffer);
+        remote[0].iov_base = (void *)0x00400000;
+        remote[0].iov_len = sizeof(buffer);
+        process_vm_readv(pid, local, 1, remote, 1, 0);
+        kill(pid, SIGKILL);
+    }
+}
+
+// process_vm_writev
+void template_process_vm_writev() {
+    int pid = fork();
+    if (pid == 0) {
+        // Child process
+        while (1);
+    } else {
+        // Parent process
+        struct iovec local[1];
+        struct iovec remote[1];
+        char buffer[] = "Hello, world!";
+        local[0].iov_base = buffer;
+        local[0].iov_len = sizeof(buffer) - 1;
+        remote[0].iov_base = (void *)0x00400000;
+        remote[0].iov_len = sizeof(buffer) - 1;
+        process_vm_writev(pid, local, 1, remote, 1, 0);
+        kill(pid, SIGKILL);
+    }
+}
+
+// kcmp
+void template_kcmp() {
+    int result = kcmp(getpid(), getpid(), KCMP_FILE, 0, 0);
+}
+
+// finit_module
+void template_finit_module() {
+    int fd = open("/path/to/module.ko", O_RDONLY);
+    if (fd != -1) {
+        finit_module(fd, "", 0);
+        close(fd);
+    }
+}
+
+// sched_setattr
+void template_sched_setattr() {
+    struct sched_attr attr = {0};
+    attr.size = sizeof(attr);
+    attr.sched_policy = SCHED_FIFO;
+    attr.sched_priority = 10;
+    sched_setattr(0, &attr, 0);
+}
+
+// sched_getattr
+void template_sched_getattr() {
+    struct sched_attr attr;
+    sched_getattr(0, &attr, sizeof(attr), 0);
+}
+
+// renameat2
+void template_renameat2() {
+    renameat2(AT_FDCWD, "/tmp/oldname.txt", AT_FDCWD, "/tmp/newname.txt", RENAME_NOREPLACE);
+}
+
+// seccomp
+void template_seccomp() {
+    seccomp(SECCOMP_SET_MODE_STRICT, 0, NULL);
+}
+
+// getrandom
+void template_getrandom() {
+    char buffer[16];
+    getrandom(buffer, sizeof(buffer), 0);
+}
+
+// memfd_create
+void template_memfd_create() {
+    int fd = memfd_create("my_memfd", MFD_CLOEXEC);
+    if (fd != -1) {
+        close(fd);
+    }
+}
