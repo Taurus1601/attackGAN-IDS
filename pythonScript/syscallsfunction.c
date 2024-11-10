@@ -1,4 +1,4 @@
-
+#ifdef __linux__
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
@@ -43,31 +43,12 @@
 #include <linux/io_uring.h>
 #include <linux/stat.h>
 #include <linux/fanotify.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <stdlib.h>
-#include <stdio.h>
-#include <string.h>
-#include <signal.h>
-#include <sched.h>
-#include <time.h>
-#include <errno.h>
-#include <pthread.h>
-#include <poll.h>
-#include <dirent.h>
-#include <syscall.h>
 #include <sys/inotify.h>
 #include <sys/msg.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
 #include <sys/kexec.h>
-#include <aio.h>
 #include <linux/mount.h>
-#include <stdint.h>
-#include <arpa/inet.h>
-#include <sys/select.h>
-#include <sys/prctl.h>
-#include <linux/fs.h>
 #include <sys/io.h>
 #include <sys/param.h>
 #include <syslog.h>
@@ -78,30 +59,59 @@
 #include <linux/capability.h>
 #include <linux/quota.h>
 #include <linux/utsname.h>
-#include <sys/sched.h>
-#include <sys/param.h>
-#include <stdio.h>
+#include <sched.h>
+#include <sys/select.h>
+#include <sys/prctl.h>
+#include <linux/fs.h>
+#endif
+
+#include <stdint.h>
+#include <fcntl.h>
+#include <unistd.h>
 #include <stdlib.h>
-#include "syscalls.h"
+#include <stdio.h>
+#include <string.h>
+#include <signal.h>
+#include <time.h>
+#include <errno.h>
+#include <pthread.h>
+#include <poll.h>
+#include <dirent.h>
+#include <syscall.h>
+#include "syscallsfunction.h"
 
 
 
 
 void template_getrlimit() {
     struct rlimit rl;
-    getrlimit(RLIMIT_NOFILE, &rl);
+    if (getrlimit(RLIMIT_NOFILE, &rl) == 0) {
+        printf("RLIMIT_NOFILE: soft limit = %ld, hard limit = %ld\n", rl.rlim_cur, rl.rlim_max);
+    } else {
+        perror("getrlimit");
+    }
 }
 
 // getrusage
 void template_getrusage() {
     struct rusage usage;
-    getrusage(RUSAGE_SELF, &usage);
+    if (getrusage(RUSAGE_SELF, &usage) == 0) {
+        printf("User CPU time used: %ld.%06ld sec\n", usage.ru_utime.tv_sec, usage.ru_utime.tv_usec);
+        printf("System CPU time used: %ld.%06ld sec\n", usage.ru_stime.tv_sec, usage.ru_stime.tv_usec);
+    } else {
+        perror("getrusage");
+    }
 }
 
-// sysinfo
 void template_sysinfo() {
     struct sysinfo info;
-    sysinfo(&info);
+    if (sysinfo(&info) == 0) {
+        printf("Uptime: %ld seconds\n", info.uptime);
+        printf("Total RAM: %lu bytes\n", info.totalram);
+        printf("Free RAM: %lu bytes\n", info.freeram);
+    } else {
+        perror("sysinfo");
+    }
 }
 
 // times

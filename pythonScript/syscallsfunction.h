@@ -243,4 +243,4 @@ void template_rt_sigtimedwait();
 void template_rt_sigqueueinfo();
 void template_rt_sigsuspend();
 
-#endif // SYSCALLS_H
+#endif // SYSCALLS_H_h
