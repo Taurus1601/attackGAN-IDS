@@ -1,6 +1,69 @@
 #ifndef SYSTEMCALLSFUNCTION_H
 #define SYSTEMCALLSFUNCTION_H
 
+//-----------anooodhhhhh----------------
+
+
+#include <stddef.h>  // Required for size_t
+#include <stdint.h>  // Required for uint32_t
+#include <sys/mman.h> // Required for mmap and MAP_FAILED
+#include <fcntl.h> 
+
+
+struct lsm_module {
+    int id;
+    char name[256];
+};
+
+struct lsm_attr {
+    int attr_id;
+    char attr_value[256];
+};
+
+struct listmount {
+    int mount_id;
+    char mount_path[256];
+};
+
+struct statmount {
+    int mount_id;
+    char mount_stats[256];
+};
+
+struct cachestat {
+    int cache_hits;
+    int cache_misses;
+    int cache_evictions;
+};
+
+
+int lsm_list_modules(struct lsm_module *modules, size_t size);
+int lsm_set_self_attr(int attr_type, struct lsm_attr *attr, size_t size);
+int lsm_get_self_attr(int attr_type, struct lsm_attr *attr, size_t size);
+int listmount(int fd, struct listmount *lm, size_t size, int flags);
+int statmount(int fd, struct statmount *sm, size_t size, int flags);
+int futex_requeue(uint32_t *futex1, int val1, uint32_t *futex2, int val2);
+int futex_wake(uint32_t *futex, int val);
+int map_shadow_stack(void *addr, size_t size);
+int cachestat(int fd, int options, struct cachestat *cstat);
+int fchmodat2(int dirfd, const char *pathname, mode_t mode, int flags);
+
+// Status variables
+extern int mseal_status;
+extern int lsm_list_modules_status;
+extern int lsm_set_self_attr_status;
+extern int lsm_get_self_attr_status;
+extern int listmount_status;
+extern int statmount_status;
+extern int futex_requeue_status;
+extern int futex_wait_status;
+extern int futex_wake_status;
+extern int map_shadow_stack_status;
+extern int cachestat_status;
+extern int fchmodat2_status;
+
+//---------------------anoodh---------------------
+
 // Function declarations only - no implementations
 void template_read(void);
 void template_write(void);

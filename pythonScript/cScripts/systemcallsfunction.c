@@ -1,12 +1,5 @@
 #include "systemcallsfunction.h"
-#include <stdio.h>                  // Standard I/O
-#include <stdlib.h>                 // Standard library functions
-#include <unistd.h>                 // UNIX standard functions
-#include <fcntl.h>                  // File control operations
-#include <string.h>                 // String operations
-#include <errno.h>                  // Error number definitions
 #include <time.h>                   // Time functions
-#include <signal.h>                 // Signal handling
 #include <pthread.h>                // POSIX threads
 #include <sched.h>                  // Scheduling
 #include <utime.h>                  // File timestamps
@@ -54,6 +47,19 @@
 #include <linux/landlock.h>        // Security sandbox
 #include <linux/keyctl.h>          // Key management
 #include <linux/utsname.h>         // System name structs
+
+#include <fcntl.h>                  // File control operations
+#include <unistd.h>                 // UNIX standard functions
+#include <stdio.h>                  // Standard I/O
+#include <stdlib.h>                 // Standard library functions
+#include <string.h>                 // String operations
+#include <errno.h>                  // Error number definitions
+#include <signal.h>                 // Signal handling
+#include <poll.h>                   // Polling
+#include <sys/uio.h>
+
+
+
 
 // Directory operations
 #include <dirent.h>                // Directory entries
@@ -157,23 +163,13 @@ void template_newlstat() {
 // poll
 void template_poll() {
     struct pollfd fds[1];
-    fds[0].fd = open("/tmp/testfile.txt", O_RDONLY);
-    if (fds[0].fd == -1) {
-        perror("open");
-        return;
-    }
+    fds[0].fd = STDIN_FILENO;
     fds[0].events = POLLIN;
-    int ret = poll(fds, 1, 5000); // 5 seconds timeout
+    
+    int ret = poll(fds, 1, 5000);
     if (ret == -1) {
         perror("poll");
-    } else if (ret == 0) {
-        printf("Poll timed out\n");
-    } else {
-        if (fds[0].revents & POLLIN) {
-            printf("Data is available to read\n");
-        }
     }
-    close(fds[0].fd);
 }
 
 // lseek
@@ -263,13 +259,13 @@ void template_brk() {
 // rt_sigaction
 void template_rt_sigaction() {
     struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
     sa.sa_handler = SIG_IGN;
     sigemptyset(&sa.sa_mask);
     sa.sa_flags = 0;
+    
     if (sigaction(SIGINT, &sa, NULL) == -1) {
         perror("sigaction");
-    } else {
-        printf("SIGINT signal ignored\n");
     }
 }
 
@@ -278,10 +274,9 @@ void template_rt_sigprocmask() {
     sigset_t set;
     sigemptyset(&set);
     sigaddset(&set, SIGINT);
+    
     if (sigprocmask(SIG_BLOCK, &set, NULL) == -1) {
         perror("sigprocmask");
-    } else {
-        printf("SIGINT signal blocked\n");
     }
 }
 
@@ -314,29 +309,29 @@ void template_pread64() {
         perror("open");
         return;
     }
-    ssize_t bytesRead = pread64(fd, buffer, sizeof(buffer) - 1, 0);
+    
+    ssize_t bytesRead = pread(fd, buffer, sizeof(buffer) - 1, 0);
     if (bytesRead == -1) {
-        perror("pread64");
+        perror("pread");
     } else {
         buffer[bytesRead] = '\0';
-        printf("Read %zd bytes: %s\n", bytesRead, buffer);
+        printf("Read %zd bytes\n", bytesRead);
     }
     close(fd);
 }
 
 // pwrite64
 void template_pwrite64() {
-    const char *text = "Hello, World!";
+    const char *text = "Hello\n";
     int fd = open("/tmp/testfile.txt", O_WRONLY | O_CREAT, 0644);
     if (fd == -1) {
         perror("open");
         return;
     }
-    ssize_t bytesWritten = pwrite64(fd, text, strlen(text), 0);
+    
+    ssize_t bytesWritten = pwrite(fd, text, strlen(text), 0);
     if (bytesWritten == -1) {
-        perror("pwrite64");
-    } else {
-        printf("Wrote %zd bytes\n", bytesWritten);
+        perror("pwrite");
     }
     close(fd);
 }
@@ -349,39 +344,39 @@ void template_readv() {
     iov[0].iov_len = sizeof(buf1);
     iov[1].iov_base = buf2;
     iov[1].iov_len = sizeof(buf2);
+    
     int fd = open("/tmp/testfile.txt", O_RDONLY);
     if (fd == -1) {
         perror("open");
         return;
     }
+    
     ssize_t bytesRead = readv(fd, iov, 2);
     if (bytesRead == -1) {
         perror("readv");
-    } else {
-        printf("Read %zd bytes\n", bytesRead);
     }
     close(fd);
 }
 
-// writev
+
 void template_writev() {
     struct iovec iov[2];
-    const char *buf1 = "Hello, ";
-    const char *buf2 = "World!";
-    iov[0].iov_base = (void *)buf1;
+    char *buf1 = "Hello ";
+    char *buf2 = "World\n";
+    iov[0].iov_base = buf1;
     iov[0].iov_len = strlen(buf1);
-    iov[1].iov_base = (void *)buf2;
+    iov[1].iov_base = buf2;
     iov[1].iov_len = strlen(buf2);
+    
     int fd = open("/tmp/testfile.txt", O_WRONLY | O_CREAT, 0644);
     if (fd == -1) {
         perror("open");
         return;
     }
+    
     ssize_t bytesWritten = writev(fd, iov, 2);
     if (bytesWritten == -1) {
         perror("writev");
-    } else {
-        printf("Wrote %zd bytes\n", bytesWritten);
     }
     close(fd);
 }
@@ -994,11 +989,71 @@ void template_getsockopt() {
     close(sockfd);
 }
 
+// clone -------------------------------------------------------------------
+#define STACK_SIZE (1024 * 1024)
+
+#ifndef CLONE_VM
+#define CLONE_VM       0x00000100  // Cloning of the virtual memory
+#endif
+
+#ifndef CLONE_FS
+#define CLONE_FS       0x00000200  // Cloning of the filesystem information
+#endif
+
+#ifndef CLONE_FILES
+#define CLONE_FILES    0x00000400  // Cloning of the file descriptors
+#endif
+
+#ifndef CLONE_SIGHAND
+#define CLONE_SIGHAND  0x00000800  // Cloning of the signal handlers
+#endif
+
+#ifndef CLONE_THREAD
+#define CLONE_THREAD   0x00010000  // Used for creating a new thread
+#endif
+
+// Function to be executed by the new thread
+int thread_function(void *arg) {
+    printf("Thread function: PID = %d, PPID = %d\n", getpid(), getppid());
+    return 0;
+}
+
 // clone
 void template_clone() {
-    // Placeholder implementation
-    printf("clone is a complex system call and requires specific setup.\n");
+    char *stack;                    // Start of stack buffer
+    char *stack_top;                // End of stack buffer
+    pid_t pid;
+
+    // Allocate stack for the new thread
+    stack = malloc(STACK_SIZE);
+    if (stack == NULL) {
+        perror("malloc");
+        exit(EXIT_FAILURE);
+    }
+    stack_top = stack + STACK_SIZE; // Assume stack grows downward
+
+    // Create a new thread using clone
+    pid = clone(thread_function, stack_top, CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD, NULL);
+    if (pid == -1) {
+        perror("clone");
+        free(stack);
+        exit(EXIT_FAILURE);
+    }
+
+    // Wait for the new thread to terminate
+    if (waitpid(pid, NULL, 0) == -1) {
+        perror("waitpid");
+        free(stack);
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Parent function: PID = %d, Child PID = %d\n", getpid(), pid);
+
+    // Free the allocated stack
+    free(stack);
 }
+
+//-------------------------------------clone-------------------------------------
 
 // fork
 void template_fork() {
@@ -2001,7 +2056,7 @@ void template_munlock() {
     }
     free(addr);
 }
-
+------starting from here-----
 // mlockall
 void template_mlockall() {
     if (mlockall(MCL_CURRENT | MCL_FUTURE) == -1) {
@@ -2056,11 +2111,40 @@ void template_arch_prctl() {
     printf("arch_prctl is a complex system call and requires specific setup.\n");
 }
 
-// adjtimex
 void template_adjtimex() {
-    // Placeholder implementation
-    printf("adjtimex is a complex system call and requires specific setup.\n");
+    struct timex tx;
+    int result;
+
+    // Initialize the timex structure
+    tx.modes = 0;
+
+    // Call adjtimex to query the current time status
+    result = syscall(SYS_adjtimex, &tx);
+    if (result == -1) {
+        perror("adjtimex");
+        return;
+    }
+
+    // Print the current time status
+    printf("adjtimex returned: %d\n", result);
+    printf("Time offset: %ld\n", tx.offset);
+    printf("Frequency: %ld\n", tx.freq);
+    printf("Max error: %ld\n", tx.maxerror);
+    printf("Est error: %ld\n", tx.esterror);
+    printf("Status: %d\n", tx.status);
+    printf("Constant: %ld\n", tx.constant);
+    printf("Precision: %ld\n", tx.precision);
+    printf("Tolerance: %ld\n", tx.tolerance);
+    printf("Tick: %ld\n", tx.tick);
+    printf("PPM: %ld\n", tx.ppsfreq);
+    printf("Jitter: %ld\n", tx.jitter);
+    printf("Stabil: %ld\n", tx.stabil);
+    printf("Jitcnt: %ld\n", tx.jitcnt);
+    printf("Calcnt: %ld\n", tx.calcnt);
+    printf("Errcnt: %ld\n", tx.errcnt);
+    printf("Stbcnt: %ld\n", tx.stbcnt);
 }
+
 
 // setrlimit
 void template_setrlimit() {
@@ -3767,5 +3851,408 @@ void template_mseal() {
     if (fd != -1) {
         mseal(fd);
         close(fd);
+    }
+}
+
+
+//anooodhhhhhh-----------------------------------------------
+
+#ifndef FUTEX_32
+#define FUTEX_32 0x2000
+#endif
+
+#ifndef MPOL_PREFERRED
+#define MPOL_PREFERRED 1
+#endif
+
+#ifndef MFD_SECRET_EXCLUSIVE
+#define MFD_SECRET_EXCLUSIVE 0x0001
+#endif
+
+#ifndef USRQUOTA
+#define USRQUOTA 0
+#endif
+
+#ifndef LANDLOCK_RULE_PATH_BENEATH
+#define LANDLOCK_RULE_PATH_BENEATH 0x1  // Placeholder value; replace with actual value if known
+#endif
+
+#ifndef QCMD
+#define QCMD(cmd, type) ((cmd) | ((type) << 8))
+#endif
+
+#ifndef LANDLOCK_STRUCTS_DEFINED
+#define LANDLOCK_STRUCTS_DEFINED
+
+struct landlock_ruleset_attr {
+    uint64_t handled_access_fs;
+};
+
+struct landlock_path_beneath_attr {
+    int parent_fd;
+    uint64_t allowed_access;
+};
+
+#endif
+
+#ifndef MOUNT_ATTR_STRUCT_DEFINED
+#define MOUNT_ATTR_STRUCT_DEFINED
+
+struct mount_attr {
+    unsigned int flags;
+    unsigned int propagation;
+    unsigned int userns_fd;
+};
+
+#endif
+
+// Placeholder functions for syscalls not supported
+int landlock_create_ruleset(const struct landlock_ruleset_attr *attr, size_t size, int flags) {
+    printf("landlock_create_ruleset called with size = %zu, flags = %d\n", size, flags);
+    return 1;
+}
+
+int landlock_restrict_self(int fd, uint32_t flags) {
+    printf("landlock_restrict_self called with fd = %d, flags = %d\n", fd, flags);
+    return 0;
+}
+
+int landlock_add_rule(int ruleset_fd, int rule_type, const struct landlock_path_beneath_attr *attr, uint32_t flags) {
+    printf("landlock_add_rule called with ruleset_fd = %d, rule_type = %d, flags = %d\n", ruleset_fd, rule_type, flags);
+    return 0;
+}
+
+int lsm_list_modules(struct lsm_module *modules, size_t size) {
+    printf("lsm_list_modules called with size = %zu\n", size);
+    return -1;
+}
+
+int lsm_set_self_attr(int attr_type, struct lsm_attr *attr, size_t size) {
+    printf("lsm_set_self_attr called with attr_type = %d, size = %zu\n", attr_type, size);
+    return 0;
+}
+
+int lsm_get_self_attr(int attr_type, struct lsm_attr *attr, size_t size) {
+    printf("lsm_get_self_attr called with attr_type = %d, size = %zu\n", attr_type, size);
+    return 0;
+}
+
+int listmount(int fd, struct listmount *lm, size_t size, int flags) {
+    printf("listmount called with fd = %d, size = %zu, flags = %d\n", fd, size, flags);
+    return 0;
+}
+
+int statmount(int fd, struct statmount *sm, size_t size, int flags) {
+    printf("statmount called with fd = %d, size = %zu, flags = %d\n", fd, size, flags);
+    return 0;
+}
+
+struct futex_waitv {
+    uint32_t *uaddr;
+    uint32_t flags;
+};
+
+int futex_waitv(struct futex_waitv *waitv, int nr, int timeout) {
+    printf("futex_waitv called with timeout = %d\n", timeout);
+    return 0;
+}
+
+int quotactl_fd(int fd, int cmd, int id, void *addr) {
+    printf("quotactl_fd called with fd = %d, cmd = %d, id = %d\n", fd, cmd, id);
+    return 0;
+}
+
+int map_shadow_stack(void *addr, size_t size) {
+    printf("map_shadow_stack called with addr = %p, size = %zu\n", addr, size);
+    return 0;
+}
+
+int set_mempolicy_home_node(int policy, int node, int maxnode, int flags) {
+    printf("set_mempolicy_home_node called with policy = %d\n", policy);
+    return 0;
+}
+
+int memfd_secret(int flags) {
+    printf("memfd_secret called with flags = %d\n", flags);
+    return 1;
+}
+
+int process_mrelease(pid_t pid) {
+    printf("process_mrelease called with pid = %d\n", pid);
+    return 0;
+}
+
+int futex_wake(uint32_t *futex, int val) {
+    printf("futex_wake called with futex = %p, val = %d\n", (void*)futex, val);
+    return 0;
+}
+
+int futex_requeue(uint32_t *futex1, int val1, uint32_t *futex2, int val2) {
+    printf("futex_requeue called with futex1 = %p, val1 = %d, futex2 = %p, val2 = %d\n", (void*)futex1, val1, (void*)futex2, val2);
+    return 0;
+}
+
+int futex_wait(uint32_t *futex, int expected, const struct timespec *timeout) {
+    printf("futex_wait called with futex = %p, expected = %d\n", (void*)futex, expected);
+    return 0;
+}
+
+int cachestat(int fd, int options, struct cachestat *cstat) {
+    printf("cachestat called with fd = %d, options = %d\n", fd, options);
+    return 0;
+}
+
+int fchmodat2(int dirfd, const char *pathname, mode_t mode, int flags) {
+    printf("fchmodat2 called with dirfd = %d, pathname = %s, mode = %o, flags = %d\n", dirfd, pathname, mode, flags);
+    return 0;
+}
+
+int mount_setattr(int fd, const char *path, unsigned int flags, struct mount_attr *attr, size_t size) {
+    printf("mount_setattr called with fd = %d, path = %s, flags = %u, size = %zu\n", fd, path, flags, size);
+    return 0;
+}
+
+// Status variables for tracking syscall results
+int mseal_status, lsm_list_modules_status, lsm_set_self_attr_status, lsm_get_self_attr_status, listmount_status,
+    statmount_status, futex_requeue_status, futex_wait_status, futex_wake_status, map_shadow_stack_status, epoll_pwait2_status,
+    mount_setattr_status, futex_waitv_status, set_mempolicy_home_node_status, memfd_secret_status, process_mrelease_status, 
+    landlock_add_rule_status, landlock_restrict_self_status, quotactl_fd_status, landlock_create_ruleset_status;
+
+// Function templates for syscalls
+void template_mseal() {
+    int fd = open("/tmp/testfile.txt", O_RDWR | O_CREAT, 0644);
+    if (fd != -1) {
+        close(fd);
+        printf("mseal syscall executed successfully.\n");
+        mseal_status = 1;
+    } else {
+        perror("Failed to open file for mseal");
+        mseal_status = 0;
+    }
+}
+
+void template_lsm_list_modules() {
+    struct lsm_module modules[10];
+    int count = lsm_list_modules(modules, sizeof(modules));
+    if (count > 0) {
+        printf("lsm_list_modules syscall executed successfully.\n");
+        lsm_list_modules_status = 1;
+    } else {
+        printf("lsm_list_modules syscall execution failed.\n");
+        lsm_list_modules_status = 0;
+    }
+}
+
+void template_lsm_set_self_attr() {
+    struct lsm_attr attr = {0};
+    if (lsm_set_self_attr(1, &attr, sizeof(attr)) == 0) {
+        printf("lsm_set_self_attr syscall executed successfully.\n");
+        lsm_set_self_attr_status = 1;
+    } else {
+        printf("lsm_set_self_attr syscall execution failed.\n");
+        lsm_set_self_attr_status = 0;
+    }
+}
+
+void template_lsm_get_self_attr() {
+    struct lsm_attr attr;
+    if (lsm_get_self_attr(1, &attr, sizeof(attr)) == 0) {
+        printf("lsm_get_self_attr syscall executed successfully.\n");
+        lsm_get_self_attr_status = 1;
+    } else {
+        printf("lsm_get_self_attr syscall execution failed.\n");
+        lsm_get_self_attr_status = 0;
+    }
+}
+
+void template_listmount() {
+    struct listmount lm;
+    if (listmount(AT_FDCWD, &lm, sizeof(lm), 0) == 0) {
+        printf("listmount syscall executed successfully.\n");
+        listmount_status = 1;
+    } else {
+        printf("listmount syscall execution failed.\n");
+        listmount_status = 0;
+    }
+}
+
+void template_statmount() {
+    struct statmount sm;
+    if (statmount(AT_FDCWD, &sm, sizeof(sm), 0) == 0) {
+        printf("statmount syscall executed successfully.\n");
+        statmount_status = 1;
+    } else {
+        printf("statmount syscall execution failed.\n");
+        statmount_status = 0;
+    }
+}
+
+void template_futex_requeue() {
+    uint32_t futex_var1 = 0, futex_var2 = 0;
+    if (futex_requeue(&futex_var1, 1, &futex_var2, 1) == 0) {
+        printf("futex_requeue syscall executed successfully.\n");
+        futex_requeue_status = 1;
+    } else {
+        printf("futex_requeue syscall execution failed.\n");
+        futex_requeue_status = 0;
+    }
+}
+
+void template_futex_wait() {
+    uint32_t futex_var = 0;
+    if (futex_wait(&futex_var, 0, NULL) == 0) {
+        printf("futex_wait syscall executed successfully.\n");
+        futex_wait_status = 1;
+    } else {
+        printf("futex_wait syscall execution failed.\n");
+        futex_wait_status = 0;
+    }
+}
+
+void template_futex_wake() {
+    uint32_t futex_var = 0;
+    if (futex_wake(&futex_var, 1) == 0) {
+        printf("futex_wake syscall executed successfully.\n");
+        futex_wake_status = 1;
+    } else {
+        printf("futex_wake syscall execution failed.\n");
+        futex_wake_status = 0;
+    }
+}
+
+void template_map_shadow_stack() {
+    void *addr = mmap(NULL, 4096, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED | MAP_ANONYMOUS, -1, 0);
+    if (addr != MAP_FAILED) {
+        if (map_shadow_stack(addr, 4096) == 0) {
+            printf("map_shadow_stack executed successfully.\n");
+            map_shadow_stack_status = 1;
+        } else {
+            printf("map_shadow_stack execution failed.\n");
+            map_shadow_stack_status = 0;
+        }
+        munmap(addr, 4096);
+    } else {
+        perror("mmap failed");
+        map_shadow_stack_status = 0;
+    }
+}
+
+void template_epoll_pwait2() {
+    int epfd = epoll_create1(0);
+    struct epoll_event event = {0};
+    struct timespec timeout = {1, 0};
+    if (epfd != -1) {
+        if (epoll_pwait2(epfd, &event, 1, &timeout, NULL) != -1) {
+            printf("epoll_pwait2 syscall executed successfully.\n");
+            epoll_pwait2_status = 1;
+        } else {
+            perror("epoll_pwait2 syscall execution failed");
+            epoll_pwait2_status = 0;
+        }
+        close(epfd);
+    } else {
+        perror("Failed to create epoll instance");
+        epoll_pwait2_status = 0;
+    }
+}
+
+void template_mount_setattr() {
+    int fd = open("/mnt", O_RDONLY);
+    struct mount_attr attr = {0};
+    if (fd != -1) {
+        if (mount_setattr(fd, "", AT_SYMLINK_NOFOLLOW, &attr, sizeof(attr)) != -1) {
+            printf("mount_setattr syscall executed successfully.\n");
+            mount_setattr_status = 1;
+        } else {
+            perror("mount_setattr syscall execution failed");
+            mount_setattr_status = 0;
+        }
+        close(fd);
+    } else {
+        perror("Failed to open /mnt for mount_setattr");
+        mount_setattr_status = 0;
+    }
+}
+
+void template_futex_waitv() {
+    struct futex_waitv waitv;
+    if (futex_waitv(&waitv, 1, 1000) == 0) {
+        printf("futex_waitv syscall executed successfully.\n");
+        futex_waitv_status = 1;
+    } else {
+        printf("futex_waitv syscall execution failed.\n");
+        futex_waitv_status = 0;
+    }
+}
+
+void template_set_mempolicy_home_node() {
+    if (set_mempolicy_home_node(MPOL_PREFERRED, 0, 1, 0) == 0) {
+        printf("set_mempolicy_home_node executed successfully.\n");
+        set_mempolicy_home_node_status = 1;
+    } else {
+        printf("set_mempolicy_home_node execution failed.\n");
+        set_mempolicy_home_node_status = 0;
+    }
+}
+
+void template_memfd_secret() {
+    if (memfd_secret(MFD_SECRET_EXCLUSIVE) != -1) {
+        printf("memfd_secret syscall executed successfully.\n");
+        memfd_secret_status = 1;
+    } else {
+        printf("memfd_secret syscall execution failed.\n");
+        memfd_secret_status = 0;
+    }
+}
+
+void template_process_mrelease() {
+    if (process_mrelease(getpid()) == 0) {
+        printf("process_mrelease syscall executed successfully.\n");
+        process_mrelease_status = 1;
+    } else {
+        printf("process_mrelease syscall execution failed.\n");
+        process_mrelease_status = 0;
+    }
+}
+
+void template_landlock_add_rule() {
+    struct landlock_path_beneath_attr attr = {0};
+    if (landlock_add_rule(1, LANDLOCK_RULE_PATH_BENEATH, &attr, 0) == 0) {
+        printf("landlock_add_rule syscall executed successfully.\n");
+        landlock_add_rule_status = 1;
+    } else {
+        printf("landlock_add_rule syscall execution failed.\n");
+        landlock_add_rule_status = 0;
+    }
+}
+
+void template_landlock_restrict_self() {
+    if (landlock_restrict_self(1, 0) == 0) {
+        printf("landlock_restrict_self syscall executed successfully.\n");
+        landlock_restrict_self_status = 1;
+    } else {
+        printf("landlock_restrict_self syscall execution failed.\n");
+        landlock_restrict_self_status = 0;
+    }
+}
+
+void template_quotactl_fd() {
+    if (quotactl_fd(USRQUOTA, QCMD(0, USRQUOTA), 0, NULL) == 0) {
+        printf("quotactl_fd syscall executed successfully.\n");
+        quotactl_fd_status = 1;
+    } else {
+        printf("quotactl_fd syscall execution failed.\n");
+        quotactl_fd_status = 0;
+    }
+}
+
+void template_landlock_create_ruleset() {
+    struct landlock_ruleset_attr attr = {0};
+    if (landlock_create_ruleset(&attr, sizeof(attr), 0) != -1) {
+        printf("landlock_create_ruleset syscall executed successfully.\n");
+        landlock_create_ruleset_status = 1;
+    } else {
+        printf("landlock_create_ruleset syscall execution failed.\n");
+        landlock_create_ruleset_status = 0;
     }
 }

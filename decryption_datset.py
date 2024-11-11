@@ -11,7 +11,7 @@ def decode_syscall_sequence(sequence, syscall_dict):
     return [syscall_dict.get(str(int_val), "Unknown") for int_val in sequence]
 
 # Load the data from the text file
-with open('UTD-0007.TXT', 'r') as file:
+with open('attack.txt', 'r') as file:
     data = file.read()
 
 # Convert the data to a list of integers
@@ -22,6 +22,6 @@ decoded_sequence = decode_syscall_sequence(sequence, syscall_dict)
 
 # Convert to DataFrame and save the result
 decoded_df = pd.DataFrame([decoded_sequence])
-decoded_df.to_csv("decoded_training.csv", index=False)
+decoded_df.to_csv("attack_decode.csv", index=False)
 
 print("Decoded system calls have been saved to 'decoded_uad_adduser.csv'.")
