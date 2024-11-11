@@ -3219,6 +3219,12 @@ void template_fanotify_init() {
     }
 }
 
+
+
+//----------------------------------------------------
+
+
+
 // fanotify_mark
 void template_fanotify_mark() {
     int fd = fanotify_init(FAN_CLOEXEC | FAN_CLASS_NOTIF, O_RDONLY);
@@ -3527,6 +3533,12 @@ void template_io_pgetevents() {
     // Generally used for asynchronous I/O completion and needs initialization.
 }
 
+
+
+
+
+
+
 // rseq
 void template_rseq() {
     struct rseq rs = {0};
@@ -3679,6 +3691,12 @@ void template_process_madvise() {
         munmap(addr, 4096);
     }
 }
+
+
+
+
+
+
 
 // epoll_pwait2
 void template_epoll_pwait2() {
